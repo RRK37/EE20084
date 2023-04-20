@@ -18,7 +18,7 @@ def get_n2(component_def):
     else:
         return -1
 
-
+# ================= Functional Block 1: Ordering the components as they appear in a cascaded circuit ====================================================
 def cascaded_circuit(file):
     n_lines = len(file)
 
@@ -37,7 +37,7 @@ def cascaded_circuit(file):
 
     for i in range(n_lines):
         if "</CIRCUIT>" in file[i][0:10]:
-            CIRCUIT_end = i-1
+            CIRCUIT_end = i
             break
         else:
             CIRCUIT_end = -1
@@ -47,7 +47,7 @@ def cascaded_circuit(file):
 
     # Retrieve just the CIRCUIT block
     CIRCUIT_block = file[CIRCUIT_start:CIRCUIT_end]
-
+    
     # Place component definitions in either 'series' or 'parallel' arrays
     series = []
     parallel = []
@@ -55,9 +55,7 @@ def cascaded_circuit(file):
         node1 = get_n1(CIRCUIT_block[i])
         node2 = get_n2(CIRCUIT_block[i])
         #find out if there is a component definition in that line
-        
-        print(node1,node2)
-
+       
         if node1 == -1 | node2 == -1:
             ignore = 1
         else:
@@ -68,13 +66,57 @@ def cascaded_circuit(file):
         elif ((node1 == 0) | (node2 == 0)) & (ignore == 0):
             parallel.append(CIRCUIT_block[i])
 
-    # sort the series array 
     
+    # Place the series components in an array, the size of the 'parallel' and 'series' arrays combined, starting from the component 
+    # connected to node 1, then the component connected to that component, then the one connected to that one etc. This will place the
+    # series components in the order that they would appear in on a cascaded diagram. 
 
+    cascaded = [None] * ( len(series) + len(parallel) )
+    last_node = 1 
+    for i in range( len(series) ):
+        for j in range( len(series) ):
+            if get_n1(series[j]) == last_node:      # Find the node of the component which is connected to the last node.
+                last_node = get_n2(series[j])       # Then set 'last_node' to the other node it is connected to.    
+                cascaded[i] = series[j]
+                series[j] = "Empty."                # Remove that component definition from the series array.        
+                break
+            elif get_n2(series[j]) == last_node:    # Same as above but looking at node 2.
+                last_node = get_n1(series[j])
+                cascaded[i] = series[j]
+                series[j] = "Empty."
+                break
+    
+    first_node = 1
 
+    # Using the node numbers of the last two components and logic to find the number of the last node.
+    # (If n1 of the last component equals n1 or n2 of the penultimate, then n2 is the final node. Otherwise it is n1)
+    last_component = cascaded[len(series)-1]
+    penultimate_component = cascaded[len(series)-2]
+    if (get_n1(last_component) == get_n1(penultimate_component)) | (get_n1(last_component) == get_n2(penultimate_component)): 
+        last_node = get_n1(last_component)
+    else:
+        last_node = get_n2(last_component) 
+    
+    for i in range(len(parallel)):
+
+        # If the parallel component is connected to the first node, shift 'cascaded' to the right and insert it into the position 0
+        if (get_n1(parallel[i]) == first_node) | (get_n2(parallel[i]) == first_node):
+            cascaded.insert(0,parallel[i])
+            cascaded.pop()
+        # Otherwise, use the non-zero node of the parallel component to find where it appears first in the cascaded circuit and place after
+        else:
+            non_zero_node = get_n1(parallel[i]) + get_n2(parallel[i])
+            for j in range(len(cascaded)-1):
+                if (get_n1(cascaded[j]) == non_zero_node) | (get_n2(cascaded[j]) == non_zero_node): 
+                    cascaded.insert(j+1,parallel[i])
+                    cascaded.pop()
+                    break
+
+        return cascaded
 
 
 net_file    = open('D:\\Code\\EE20084\\EE20084\\input_files\\a_Test_Circuit_1.net','rt')
 file        = net_file.readlines()
 
 cascaded_circuit(file)
+
