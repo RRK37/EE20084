@@ -27,18 +27,24 @@ def cascaded_circuit (file: str, n_lines: int) -> list[str]:
 
     """
 
-    # Finding where the <CIRCUIT> block starts by going line by line checking for <CIRCUIT>
+    # Finding where the <CIRCUIT> block starts, going line by line checking for <CIRCUIT>
     line_index = 0
-    cir_index = 0
+    cir_start = 0
     for i in range(n_lines):
         if "<CIRCUIT>" in file[line_index:line_index+10]:
             cir_start = line_index + 10 
 
         line_index = file.find("\n",line_index+3)   # Find the next line start
 
-    # Finding the end of the <CIRCUIT> block. Going line by line till: </CIRCUIT>
-    for i in 
+    # Checking line by line to find a line beginning with </CIRCUIT>, from the beginning 
+    # of the block.
+    line_index = cir_start # begins at the start of circuit block (cir_start)
+    cir_end = cir_start
+    for i in range(n_lines):
+        if "</CIRCUIT>" in file[line_index:line_index+11]:
+            cir_start = line_index + 10 
 
+        line_index = file.find("\n",line_index+3)   # Find the next line start
 
     # Populating the 'serial' and 'parallel' arrays with corresponding component defintions
     serial_comp = []
@@ -47,7 +53,32 @@ def cascaded_circuit (file: str, n_lines: int) -> list[str]:
     more_nodes = True
     while more_nodes:
         match = re.search(r'n1\s*=\s*(\d+)', file[cir_index])
-        if match =
+        if match 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
