@@ -1,0 +1,19 @@
+
+# Components are out of order, now 
+# formatting is all over the place.
+
+<CIRCUIT>
+n1 =6 n2=0 L=8
+n1=5      n2=6 C=7
+
+# (-_-) ____
+#  ||--/
+n1=4 n2 =  5 R=6
+n1   = 4 n2=0 R=5
+n1= 3 n2 = 4 R=4
+n1 =  2 n2   =  3 L=3
+# lorem ipsum
+n1= 2 n2=0 R=2
+n1 = 2  n2=0 C=2
+n1 = 1 n2 = 2  R=1
+</CIRCUIT>

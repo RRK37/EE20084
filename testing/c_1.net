@@ -1,0 +1,10 @@
+
+# Only parallel components.
+
+<CIRCUIT>
+n1=1 n2=0 R=1
+n1=1 n2=0 R=1
+n1=1 n2=0 L=1 
+n1=1 n2=0 R=1
+n1=1 n2=0 C=1
+</CIRCUIT>

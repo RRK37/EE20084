@@ -1,0 +1,14 @@
+
+# Series components only, out
+# of order and sporadic node
+# numbering.
+
+<CIRCUIT>x
+n1 = 40 n2 = 52 R=4
+n1 = 52 n2 = 60 R=5 
+n1 = 37 n2 = 40 R=3
+n1 = 60 n2 = 77 C=6
+n1 = 77 n2 = 82 L=7
+n1 = 1 n2 = 222 R=1
+n1 = 222 n2 = 37 R=2
+</CIRCUIT>

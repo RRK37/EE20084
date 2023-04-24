@@ -1,5 +1,8 @@
-import re
 
+import re
+from termcolor import colored
+import numpy as np
+import math
 
 def get_n1(component_def):
    
@@ -17,11 +20,34 @@ def get_n2(component_def):
         return int(match.group(1))
     else:
         return -1
+    
+def get_val(component_def):
+
+    component_type = -1 # If none of the definition types are matched, return -1 (the "not matched flag")
+    component_val = -1
+
+    match = re.search(r"R\s*=\s*(\d+)", component_def)  # Resistance: component type 1
+    if match:
+        component_val = int(match.group(1))
+        component_type = 1
+    match = re.search(r"G\s*=\s*(\d+)", component_def)  # Conductance: component type 2
+    if match:
+        component_val = int(match.group(1))
+        component_type = 2
+    match = re.search(r"L\s*=\s*(\d+)", component_def)  # Inductance: component type 3
+    if match:
+        component_val = int(match.group(1))
+        component_type = 3
+    match = re.search(r"C\s*=\s*(\d+)", component_def)  # Capacitance: component type 4
+    if match:
+        component_val = int(match.group(1))
+        component_type = 4
+
+    return [component_val,component_type]   
 
 # ================= Functional Block 1: Ordering the components as they appear in a cascaded circuit ====================================================
 def cascaded_circuit(file):
     n_lines = len(file)
-
 
     # Looking for the beginning and end of the circuit block, raising errors if
     # they are not found
@@ -50,13 +76,13 @@ def cascaded_circuit(file):
     
     # Place component definitions in either 'series' or 'parallel' arrays
     series = []
-    parallel = []
+    parallel = []   
     for i in range(len(CIRCUIT_block)):
+        # Retrieve the node values from the component in questions, 
+        # if that line has no node values or starts with comment then ignore it
         node1 = get_n1(CIRCUIT_block[i])
         node2 = get_n2(CIRCUIT_block[i])
-        #find out if there is a component definition in that line
-       
-        if node1 == -1 | node2 == -1:
+        if (node1 == -1) | (node2 == -1) | (CIRCUIT_block[i][0] == "#"):
             ignore = 1
         else:
             ignore = 0
@@ -70,7 +96,6 @@ def cascaded_circuit(file):
     # Place the series components in an array, the size of the 'parallel' and 'series' arrays combined, starting from the component 
     # connected to node 1, then the component connected to that component, then the one connected to that one etc. This will place the
     # series components in the order that they would appear in on a cascaded diagram. 
-
     cascaded = [None] * ( len(series) + len(parallel) )
     last_node = 1 
     for i in range( len(series) ):
@@ -85,25 +110,32 @@ def cascaded_circuit(file):
                 cascaded[i] = series[j]
                 series[j] = "Empty."
                 break
-    
+
     first_node = 1
-
-    # Using the node numbers of the last two components and logic to find the number of the last node.
+    # Using the node numbers of the last two components and logic to find the number of the last node - the one connected to load.
     # (If n1 of the last component equals n1 or n2 of the penultimate, then n2 is the final node. Otherwise it is n1)
-    last_component = cascaded[len(series)-1]
-    penultimate_component = cascaded[len(series)-2]
-    if (get_n1(last_component) == get_n1(penultimate_component)) | (get_n1(last_component) == get_n2(penultimate_component)): 
-        last_node = get_n1(last_component)
-    else:
-        last_node = get_n2(last_component) 
-    
-    for i in range(len(parallel)):
+    try:
+        last_component = cascaded[len(series)-1]
+        penultimate_component = cascaded[len(series)-2]
+        if (get_n1(last_component) == get_n1(penultimate_component)) | (get_n1(last_component) == get_n2(penultimate_component)): 
+            last_node = get_n1(last_component)
+        else:
+            last_node = get_n2(last_component) 
+    except:
+        last_node = 1 # if nothing in series 
 
+
+    # Inserting the parallel components inbetween the series components.
+    for i in range(len(parallel)):
+        
         # If the parallel component is connected to the first node, shift 'cascaded' to the right and insert it into the position 0
         if (get_n1(parallel[i]) == first_node) | (get_n2(parallel[i]) == first_node):
             cascaded.insert(0,parallel[i])
             cascaded.pop()
+
         # Otherwise, use the non-zero node of the parallel component to find where it appears first in the cascaded circuit and place after
+        # (A parallel component must be placed inbetween two series components sharing the same node, that means you can place it after the 
+        # first component that its non-zero node)
         else:
             non_zero_node = get_n1(parallel[i]) + get_n2(parallel[i])
             for j in range(len(cascaded)-1):
@@ -112,11 +144,181 @@ def cascaded_circuit(file):
                     cascaded.pop()
                     break
 
-        return cascaded
+    return cascaded
 
 
-net_file    = open('D:\\Code\\EE20084\\EE20084\\input_files\\a_Test_Circuit_1.net','rt')
-file        = net_file.readlines()
 
-cascaded_circuit(file)
+
+
+def test_cascaded(cascaded): # DELETE ME! 
+    '''
+    This function goes through the cascaded circuit returned by the 
+    cascaded_circuit function and checks that the components are ordered 
+    correctly. This relies on the test circuit components having a 
+    component value in accordance to the position that they should be 
+    in (parallel components next to one another having the same value, 
+    since their order doesnt matter). This function only works based on 
+    that assumption. The output of the test is printed. 
+
+    param cascaded: The array of string containing ordered component definitions
+
+    '''
+
+    print("Running test... ", end='') 
+
+    error = 0     # Innocent till proven guilty.       
+
+    # Check if components values are in ascending order.
+    n_lines = len(cascaded)
+    for i in range(n_lines-1):
+        if get_val(cascaded[i])[0] > get_val(cascaded[i+1])[0]:
+            error = 1
+
+    # Colorful display of result.
+    if error == 1:
+        print(colored("TEST FAILED","red"))
+    else:
+        print(colored("PASSED.","green"))
+
+
+
+#=====================================================================================================
+
+def frequencies(file):
+    
+    n_lines = len(file)
+
+    # Looking for the beginning and end of the terms block, raising errors if not found
+    for i in range(n_lines):
+        if "<TERMS>" in file[i][0:8]: # is "<TERMS>" in line i characters 0-8?
+            TERMS_start = i+1         # if it is: the next line is the start of 
+            break                       # the terms block
+        else:
+            TERMS_start = -1
+        
+    if (TERMS_start == -1):
+        raise Exception("Start of TERMS block not found.")
+
+    for i in range(n_lines):
+        if "</TERMS>" in file[i][0:9]:
+            TERMS_end = i
+            break
+        else:
+            TERMS_end = -1
+    
+    if (TERMS_end == -1):
+        raise Exception("End of TERMS block not found.")
+
+    for i in range(n_lines):
+        if "</TERMS>" in file[i][0:9]:
+            TERMS_end = i
+            break
+        else:
+            TERMS_end = -1
+
+    if (TERMS_end == -1):
+        raise Exception("End of TERMS block not found.")
+    
+    TERMS_block = file[TERMS_start:TERMS_end]
+
+    # Look, line by line, for either the normal or the logarithmic definition of frequency and create the frequency array accordingly.
+    for i in range(len(TERMS_block)):
+
+        # Make the regular expressions to find "LFstart", "LFend", "Nfreqs"
+        # (we first try catch the log definition to make code simpler. Since
+        # the normal definition is contained within the log one, eg. "Fstart"
+        # is present in "LFstart".)
+        LFstart_regex = r"LFstart\s*=\s*([0-9.]+)"
+        LFend_regex = r"LFend\s*=\s*([0-9.]+)"
+        Nfreqs_regex = r"Nfreqs\s*=\s*([0-9]+)"
+        # Find out if they match anywhere in the line (file[i])
+        LFstart_match = re.search(LFstart_regex, file[i])
+        LFend_match = re.search(LFend_regex, file[i])
+        Nfreqs_match = re.search(Nfreqs_regex, file[i])
+        # If they match then extract values and create the array
+        if LFstart_match and LFend_match and Nfreqs_match:
+            LFstart = float(LFstart_match.group(1))
+            LFend   = float(LFend_match.group(1))
+            Nfreqs  =   int(Nfreqs_match.group(1))
+                        
+            return np.logspace(np.log10(LFstart), np.log10(LFend), num=Nfreqs)
+
+
+        #  If they do not match try "Fstart", "Fend", and "Nfreq"
+        Fstart_regex = r"Fstart\s*=\s*([0-9.]+)"
+        Fend_regex = r"Fend\s*=\s*([0-9.]+)"
+        Nfreqs_regex = r"Nfreqs\s*=\s*([0-9]+)"
+        # Find out if they match anywhere in the line (file[i])
+        Fstart_match = re.search(Fstart_regex, file[i])
+        Fend_match = re.search(Fend_regex, file[i])
+        Nfreqs_match = re.search(Nfreqs_regex, file[i])
+        # If they match then extract values and create the array
+        if Fstart_match and Fend_match and Nfreqs_match:
+            Fstart  = float(Fstart_match.group(1))
+            Fend    = float(Fend_match.group(1)  )
+            Nfreqs  =   int(Nfreqs_match.group(1))
+            return np.linspace(Fstart, Fend, Nfreqs)
+         
+
+
+def test_frequencies(frequencies, log = 0):
+    
+    # If the log parameter enabled, get the log of the array and then see if linear 
+    if log == 1:
+        frequencies = np.log(frequencies)
+        print("Testing for logarithmic spacing",end=" ")
+    else:
+        print("Testing for linear spacing",end =" ")
+    n_freq = len(frequencies)
+    # If there is only one frequency, the spacing doesnt matter
+    if n_freq == 1:
+        print(colored("PASSED.","green"))
+        return
+    
+    # Check what the spacing of the first two frequencies is, and then check
+    # that the rest of the spaces are close
+    first_space = frequencies[1] - frequencies[0]
+    error = 0   # innocent till guilty
+    for i in range(n_freq-1):
+        current_space = frequencies[i+1] - frequencies[i]
+        if False == math.isclose(first_space,current_space):
+            error = 1
+    # Colorful display of result.
+    if error == 1:
+        print(colored("TEST FAILED","red"))
+    else:
+        print(colored("PASSED.","green"))
+
+
+
+
+
+
+# Example string
+print("load freq_1.net")
+net_file    = open('D:\\Code\\EE20084\\EE20084\\testing\\freq_1.net','rt')
+file = net_file.readlines()
+freq = frequencies(file)
+test_frequencies(freq)
+
+print("load freq_2.net")
+# Example string
+net_file    = open('D:\\Code\\EE20084\\EE20084\\testing\\freq_2.net','rt')
+file = net_file.readlines()
+freq = frequencies(file)
+test_frequencies(freq,1)
+
+print("load freq_3.net")
+# Example string
+net_file    = open('D:\\Code\\EE20084\\EE20084\\testing\\freq_3.net','rt')
+file = net_file.readlines()
+freq = frequencies(file)
+test_frequencies(freq,1)
+
+print("load freq_4.net")
+# Example string
+net_file    = open('D:\\Code\\EE20084\\EE20084\\testing\\freq_4.net','rt')
+file = net_file.readlines()
+freq = frequencies(file)
+test_frequencies(freq,1)
 
