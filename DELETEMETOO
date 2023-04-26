@@ -1,0 +1,404 @@
+####################################################################################################################################################################
+#       Filename:       mainScript.py
+#       Summary:        This script simulates a circuit provided as a .net file, outputting the results of the simulation in a .csv file, and possibly graph plots.
+#       Description:    Taking in a .csv file it is read and a corresponding virtual cascaded circuit is composed. Its charecteristic two-port ABCD matrix is calc- 
+#                       ulated for each frequency defined in the .net file. It is then simulated in tangent to the input and output circuits provided in the .net.
+#                       The results of the simulation are stored in a matrix and output in a .csv.
+#       Author:         R. Klotins
+####################################################################################################################################################################
+
+
+#=========== Libraries  ============================================================================================================================================
+
+import re
+from termcolor import colored
+import numpy as np
+import math
+
+#=========== Accesiblity functions =================================================================================================================================
+
+def get_n1(component_def):
+    '''
+    Returns the n1 integer value of a string component definition. If it cannot be found it returns -1.
+
+    param component_def: the component definition (eg. "n1=1 n2=2 R=3")
+    
+    returns: integer value of n1 (eg. 1)    
+    '''
+    match = re.search(r'n1\s*=\s*([\d.e+-]+)', component_def)
+    if match:
+        return int(match.group(1))
+    else:
+        return -1
+
+
+def get_n2(component_def):
+    '''
+    Returns the n2 integer value of a string component definition. If it cannot be found it returns -1.
+
+    param component_def: the component definition (eg. "n1=1 n2=2 R=3")
+    
+    returns: integer value of n2 (eg. 2)    
+    '''
+   
+    match = re.search(r'n2\s*=\s*([\d.e+-]+)', component_def)
+    if match:
+        return int(match.group(1))
+    else:
+        return -1
+    
+def get_val(component_def):
+    '''
+    Returns the value and type of the component definition provided. The type can either be
+    1: R, 2: G, 3: L, 4: C. If not found, returns -1.
+
+    param component_def: the component definition (eg. "n1=1 n2=2 C=3")
+    
+    returns: integer value of n1 in the first position of vector, and the type in the second (eg. [3,4])     
+    '''
+
+    component_type = -1 # If none of the definition types are matched, return -1 (the "not matched flag")
+    component_val = -1
+
+    match = re.search(r"R\s*=\s*([\d.e+-]+)", component_def)  # Resistance: component type 1
+    if match:
+        component_val = float(match.group(1))
+        component_type = 1
+    match = re.search(r"G\s*=\s*([\d.e+-]+)", component_def)  # Conductance: component type 2
+    if match:
+        component_val = float(match.group(1))
+        component_type = 2
+    match = re.search(r"L\s*=\s*([\d.e+-]+)", component_def)  # Inductance: component type 3
+    if match:
+        component_val = float(match.group(1))
+        component_type = 3
+    match = re.search(r"C\s*=\s*([\d.e+-]+)", component_def)  # Capacitance: component type 4
+    if match:
+        component_val = float(match.group(1))
+        component_type = 4
+
+    return [component_val,component_type]   
+
+
+def get_ABCD(component_def,freq):
+    '''
+    Given a component definition and frequency, return the A, B, C, D values of the components ABCD matrix
+
+    param component_def: String component definition
+
+    param freq: float value of frequency
+
+    returns: the 4 matrix values in an array, [A,B,C,D]     
+    '''
+    component_val = get_val(component_def)
+
+    # Resisstance value
+    if component_val[1] == 1:
+        if (get_n1(component_def) == 0) or (get_n2(component_def) == 0):    # If the component is parallel, one of the nodes will connect to zero, so make shunt ABCD
+            A,B,C,D = 1,0,component_val[0],1
+        else:                                                               # Otherwise make the series impedance 
+            A,B,C,D = 1,component_val[0],0,1
+    # Conductance value
+    if component_val[1] == 2: 
+        if (get_n1(component_def) == 0) or (get_n2(component_def) == 0):    
+            A,B,C,D = 1,0,(1 / component_val[0]),1                            # Resistance = 1 / Conductance
+        else:                                                               
+            A,B,C,D = 1,(1 / component_val[0]),0,1
+    # Inductance value
+    if component_val[1] == 3:
+        
+        
+#=========== Functional Block 1: Cascaded Circuit Composition ======================================================================================================
+
+def cascaded_circuit(file):
+    '''
+    Takes in the .net file in string array from, every line being in a new element. Retruns the 
+    component defintions in a string array which is sorted according to how they would appear 
+    in a cascaded circuit diagram (closer to the input -> lower index, vice versa). 
+    
+    param file: string array, each element is line from the file.
+
+    returns: string array of component definitions, sorted.    
+    '''
+    
+    n_lines = len(file)
+
+    # Looking for the beginning and end of the circuit block, raising errors if
+    # they are not found
+    for i in range(n_lines):
+        if "<CIRCUIT>" in file[i][0:9]: # is "<CIRCUIT>" in line i characters 0-8?
+            CIRCUIT_start = i+1         # if it is: the next line is the start of 
+            break                       # the terms block
+        else:
+            CIRCUIT_start = -1
+        
+    if (CIRCUIT_start == -1):
+        raise Exception("Start of CIRCUIT block not found.")
+
+    for i in range(n_lines):
+        if "</CIRCUIT>" in file[i][0:10]:
+            CIRCUIT_end = i
+            break
+        else:
+            CIRCUIT_end = -1
+    
+    if (CIRCUIT_end == -1):
+        raise Exception("End of CIRCUIT block not found.")
+
+    # Retrieve just the CIRCUIT block
+    CIRCUIT_block = file[CIRCUIT_start:CIRCUIT_end]
+    
+    # Place component definitions in either 'series' or 'parallel' arrays
+    series = []
+    parallel = []   
+    for i in range(len(CIRCUIT_block)):
+        # Retrieve the node values from the component in questions, 
+        # if that line has no node values or starts with comment then ignore it
+        node1 = get_n1(CIRCUIT_block[i])
+        node2 = get_n2(CIRCUIT_block[i])
+        if (node1 == -1) | (node2 == -1) | (CIRCUIT_block[i][0] == "#"):
+            ignore = 1
+        else:
+            ignore = 0
+
+        if (node1 != 0) & (node2 !=0) & (ignore == 0):          # This part takes advantage of the fact that parallel components will be
+            series.append(CIRCUIT_block[i])                     # connected to the zero node to differentiate them from series.
+        elif ((node1 == 0) | (node2 == 0)) & (ignore == 0):     
+            parallel.append(CIRCUIT_block[i])
+
+    
+    # Place the series components in an array, which is the size of the 'parallel' and 'series' arrays combined, starting from the component 
+    # connected to node 1, then the component connected to that component, then the one connected to that one etc. This will place the
+    # series components in the order that they would appear in on a cascaded diagram. 
+    cascaded = [None] * ( len(series) + len(parallel) )
+    last_node = 1 
+    for i in range( len(series) ):
+        for j in range( len(series) ):
+            if get_n1(series[j]) == last_node:      # Find the node of the component which is connected to the last node.
+                last_node = get_n2(series[j])       # Then set 'last_node' to the other node it is connected to.    
+                cascaded[i] = series[j]
+                series[j] = "Empty."                # Remove that component definition from the series array.        
+                break
+            elif get_n2(series[j]) == last_node:    # Same as above but looking at node 2. Because nodes do not have to be
+                last_node = get_n1(series[j])       # in order as they appear in the diagram, this allows flexibility for 
+                cascaded[i] = series[j]             # the user.
+                series[j] = "Empty."
+                break
+
+    first_node = 1
+    # Inserting the parallel components inbetween the series components.
+    for i in range(len(parallel)):
+        
+        # If the parallel component is connected to the first node, shift 'cascaded' to the right and insert it into the position 0
+        if (get_n1(parallel[i]) == first_node) | (get_n2(parallel[i]) == first_node):
+            cascaded.insert(0,parallel[i])
+            cascaded.pop()
+
+        # Otherwise, use the non-zero node of the parallel component to find where it appears first in the cascaded circuit and place after
+        # (A parallel component must be placed inbetween two series components sharing the same node, that means you can place it after the 
+        # first component that has the same non-zero node as it)
+        else:
+            non_zero_node = get_n1(parallel[i]) + get_n2(parallel[i])
+            for j in range(len(cascaded)-1):
+                if (get_n1(cascaded[j]) == non_zero_node) | (get_n2(cascaded[j]) == non_zero_node): 
+                    cascaded.insert(j+1,parallel[i])    # Insert it into position, sliding everything to the right
+                    cascaded.pop()                      # Remove (pop) the last index from the array, this is by
+                    break                               # necessity an empty cell.
+
+    return cascaded
+
+#=========== Functional Block 2: Generate frequency points ======================================================================================================
+
+def frequencies(file):
+    '''
+    Parse the file and find the TERMS block from which the frequency definitions are extracted.
+    From these definitions generate either linear or logarithmically spaced frequency points. 
+    
+    param file: .net file read into string array, every line is its own element
+
+    returns: an array of frequency points
+    '''
+    
+    n_lines = len(file)
+
+    # Looking for the beginning and end of the terms block, raising errors if not found
+    for i in range(n_lines):
+        if "<TERMS>" in file[i][0:8]: # is "<TERMS>" in line i characters 0-8?
+            TERMS_start = i+1         # if it is: the next line is the start of 
+            break                       # the terms block
+        else:
+            TERMS_start = -1
+        
+    if (TERMS_start == -1):
+        raise Exception("Start of TERMS block not found.")
+
+    for i in range(n_lines):
+        if "</TERMS>" in file[i][0:9]:
+            TERMS_end = i
+            break
+        else:
+            TERMS_end = -1
+    
+    if (TERMS_end == -1):
+        raise Exception("End of TERMS block not found.")
+
+    for i in range(n_lines):
+        if "</TERMS>" in file[i][0:9]:
+            TERMS_end = i
+            break
+        else:
+            TERMS_end = -1
+
+    if (TERMS_end == -1):
+        raise Exception("End of TERMS block not found.")
+    
+    TERMS_block = file[TERMS_start:TERMS_end]
+
+    # Look, line by line, for either the normal or the logarithmic definition of frequency and create the frequency array accordingly.
+    for i in range(len(TERMS_block)):
+
+        # Make the regular expressions to find "LFstart", "LFend", "Nfreqs"
+        # (we first try catch the log definition to make code simpler. Since
+        # the normal definition is contained within the log one, eg. "Fstart"
+        # is present in "LFstart".)
+        LFstart_regex = r"LFstart\s*=\s*([\d.e+-]+)"
+        LFend_regex = r"LFend\s*=\s*([\d.e+-]+)"
+        Nfreqs_regex = r"Nfreqs\s*=\s*([\d.e+-]+)"
+        # Find out if they match anywhere in the line (file[i])
+        LFstart_match = re.search(LFstart_regex, TERMS_block[i])
+        LFend_match = re.search(LFend_regex, TERMS_block[i])
+        Nfreqs_match = re.search(Nfreqs_regex, TERMS_block[i])
+        # If they match then extract values and create the array
+        if LFstart_match and LFend_match and Nfreqs_match:
+            LFstart = float(LFstart_match.group(1))
+            LFend   = float(LFend_match.group(1))
+            Nfreqs  =   int(Nfreqs_match.group(1))
+                        
+            return np.logspace(np.log10(LFstart), np.log10(LFend), num=Nfreqs)
+
+
+        #  If they do not match try "Fstart", "Fend", and "Nfreq"
+        Fstart_regex = r"Fstart\s*=\s*([\d.e+-]+)"
+        Fend_regex = r"Fend\s*=\s*([\d.e+-]+)"
+        Nfreqs_regex = r"Nfreqs\s*=\s*([\d.e+-]+)"
+        # Find out if they match anywhere in the line (file[i])
+        Fstart_match = re.search(Fstart_regex, TERMS_block[i])
+        Fend_match = re.search(Fend_regex, TERMS_block[i])
+        Nfreqs_match = re.search(Nfreqs_regex, TERMS_block[i])
+        # If they match then extract values and create the array
+        if Fstart_match and Fend_match and Nfreqs_match:
+            Fstart  = float(Fstart_match.group(1))
+            Fend    = float(Fend_match.group(1)  )
+            Nfreqs  =   int(Nfreqs_match.group(1))
+            return np.linspace(Fstart, Fend, Nfreqs)
+        
+
+#=========== Functional Block 3: Retreive Source and Load circuits ======================================================================================================7
+
+
+def get_VsRsRl(file):
+    '''
+    From the <TERMS> block find the definitions of the load and input circuits, operate on them
+    if necessary to normalise (turning GS into RS). Then return VS, Rs, Rl.
+
+    param file: 
+
+    returns: array of VT, RS, RL values
+    '''
+    n_lines = len(file)
+
+    # Looking for the beginning and end of the terms block, raising errors if not found
+    for i in range(n_lines):
+        if "<TERMS>" in file[i][0:8]: # is "<TERMS>" in line i characters 0-8?
+            TERMS_start = i+1         # if it is: the next line is the start of 
+            break                       # the terms block
+        else:
+            TERMS_start = -1 
+    if (TERMS_start == -1):
+        raise Exception("Start of TERMS block not found.")
+
+    for i in range(n_lines):
+        if "</TERMS>" in file[i][0:9]:
+            TERMS_end = i
+            break
+        else:
+            TERMS_end = -1
+    if (TERMS_end == -1):
+        raise Exception("End of TERMS block not found.")
+
+    TERMS_block = file[TERMS_start:TERMS_end]
+    # The values being -1 means they are not found yet.
+    RS = -1
+    RL = -1
+    IN = -1
+    VT = -1
+
+    for i in range(len(TERMS_block)):
+        line = TERMS_block[i]
+        # Ignore line if it starts with "#"
+        if line[0] == "#":
+            continue
+
+        # If RS found: RS = val
+        match = re.search(r'RS\s*=\s*([\d.e+-]+)', line)
+        if match:
+            RS = float(match.group(1))
+        # If GS found: RS = 1/val
+        match = re.search(r'GS\s*=\s*([\d.e+-]+)', line)
+        if match:
+            RS = 1/float(match.group(1))
+        # If IN found: IN = val, VT = -1
+        match = re.search(r'IN\s*=\s*([\d.e+-]+)', line)
+        if match:
+            IN = float(match.group(1))
+        # If VT found: VT = val, IN = -1
+        match = re.search(r'VT\s*=\s*([\d.e+-]+)', line)
+        if match:
+            VT = float(match.group(1))
+        # If RL found: RL = val
+        match = re.search(r'RL\s*=\s*([\d.e+-]+)', line)
+        if match:
+            RL = float(match.group(1))
+
+    # If the neccessary values have not been found then raise exception. (either: RS or RL or (both VT and IN )
+    if (RS == -1) or (RL == -1) or ((IN == -1) and (VT == -1)):
+        raise Exception("Terms values not present or not formatted correctly.")
+    
+    # Check if VT was not found, meaning that a Norton source was used, then convert IN to Thevanin
+    if VT == -1:
+        VT = IN * RS
+
+    return [VT,RS,RL]
+
+       
+#=========================== Output Array ==========================================================================================================================================================
+    
+def transfer_functions(cascaded, frequencies):
+    '''
+    For every frequency, go through the cascaded circuit and multiply together each ABCD matrix till the end to get 
+    the total transfer fucntion of the circuit.
+    
+    param cascaded: The componenet definitions ordered according to how a cascaded circuit would be.
+
+    param frequencies: All the frequency points desired by the user.
+
+    returns: The A, B, C, D values of each frequency in 4 arrays. 
+    '''
+    for i in range(len(frequencies)):
+        
+
+
+
+
+file = 'D:\\Code\\EE20084\\EE20084\\input_files\\c_LCG.net'
+print("load ",file)
+net_file    = open(file,'rt')
+file = net_file.readlines()
+casc = cascaded_circuit(file)
+freq = frequencies(file)
+VsRsRl = get_VsRsRl(file)
+
+print(casc)
+print(freq)
+print(VsRsRl)
+
